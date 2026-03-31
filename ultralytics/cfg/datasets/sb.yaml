@@ -1,0 +1,11 @@
+path: E:\deeplearning\ultralytics-main\ultralytics-main\sb_dataset1
+
+train: images/train
+val: images/val
+test: images/test
+
+nc: 2
+
+names:
+  0: scallop
+  1: scallop_meat

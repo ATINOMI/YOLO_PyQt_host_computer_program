@@ -1,0 +1,11 @@
+# 安装Git LFS
+git lfs install
+
+# 追踪.pt文件
+git lfs track "*.pt"
+
+# 然后正常add/commit/push就行
+git add .gitattributes
+git add *.pt
+git commit -m "add model weights via LFS"
+git push
