@@ -1,8 +1,0 @@
-path: E:/deeplearning/qt - 副本/hands&fists/hands&fists
-train: images/train
-val: images/val
-test: images/test
-
-names:
-  - open
-  - close
