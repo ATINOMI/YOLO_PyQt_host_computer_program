@@ -1,11 +1,13 @@
-# 安装Git LFS
-git lfs install
+# YOLO模型权重
+*.pt
 
-# 追踪.pt文件
-git lfs track "*.pt"
+# Python缓存
+__pycache__/
+*.pyc
 
-# 然后正常add/commit/push就行
-git add .gitattributes
-git add *.pt
-git commit -m "add model weights via LFS"
-git push
+# VSCode配置（可选，看个人喜好）
+.vscode/
+
+# 虚拟环境（如果有的话）
+venv/
+.env

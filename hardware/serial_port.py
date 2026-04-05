@@ -2,7 +2,6 @@
 串口收发模块（完整的收发 + 参数配置）
 """
 import queue
-import time
 import serial
 import serial.tools.list_ports
 from PyQt5.QtCore import QThread, pyqtSignal
@@ -21,7 +20,6 @@ class SerialPort(QThread):
         self.ser = None
         self._running = False
         self._tx_queue = queue.Queue()
-        self._rx_buffer = bytearray()
 
         # 配置参数
         self.port = 'COM3'
@@ -45,7 +43,6 @@ class SerialPort(QThread):
         self.port = port
         self.baudrate = baudrate
 
-        # 映射数据位
         bytesize_map = {
             5: serial.FIVEBITS,
             6: serial.SIXBITS,
@@ -54,7 +51,6 @@ class SerialPort(QThread):
         }
         self.bytesize = bytesize_map.get(bytesize, serial.EIGHTBITS)
 
-        # 映射校验位
         parity_map = {
             'N': serial.PARITY_NONE,
             'E': serial.PARITY_EVEN,
@@ -64,21 +60,15 @@ class SerialPort(QThread):
         }
         self.parity = parity_map.get(parity.upper(), serial.PARITY_NONE)
 
-        # 映射停止位
         stopbits_map = {
-            1: serial.STOPBITS_ONE,
+            1:   serial.STOPBITS_ONE,
             1.5: serial.STOPBITS_ONE_POINT_FIVE,
-            2: serial.STOPBITS_TWO
+            2:   serial.STOPBITS_TWO
         }
         self.stopbits = stopbits_map.get(stopbits, serial.STOPBITS_ONE)
 
     def open_port(self) -> bool:
-        """
-        打开串口
-
-        Returns:
-            True if successful, False otherwise
-        """
+        """打开串口"""
         try:
             self.ser = serial.Serial(
                 port=self.port,
@@ -89,7 +79,7 @@ class SerialPort(QThread):
                 timeout=0.5
             )
             self._running = True
-            self.start()  # 启动接收线程
+            self.start()
             self.sig_port_opened.emit(f"{self.port}@{self.baudrate}")
             return True
         except Exception as e:
@@ -99,18 +89,13 @@ class SerialPort(QThread):
     def close_port(self):
         """关闭串口"""
         self._running = False
-        self.wait()  # 等待线程结束
+        self.wait()
         if self.ser and self.ser.is_open:
             self.ser.close()
         self.sig_port_closed.emit()
 
     def write(self, data: bytes):
-        """
-        异步发送数据（放入队列）
-
-        Args:
-            data: 要发送的字节数据
-        """
+        """异步发送数据"""
         self._tx_queue.put(data)
 
     def run(self):
@@ -126,34 +111,21 @@ class SerialPort(QThread):
             except Exception as e:
                 self.sig_error.emit(f"发送失败: {e}")
 
-            # 处理接收（粘包处理：以 \n 分包）
+            # 处理接收：有数据就直接发出，不做分包
             if self.ser and self.ser.is_open:
                 try:
                     if self.ser.in_waiting > 0:
                         chunk = self.ser.read(self.ser.in_waiting)
-                        self._rx_buffer.extend(chunk)
-
-                        # 分包处理
-                        while b'\n' in self._rx_buffer:
-                            idx = self._rx_buffer.index(b'\n')
-                            packet = bytes(self._rx_buffer[:idx])
-                            self._rx_buffer = self._rx_buffer[idx+1:]
-                            if packet:  # 忽略空包
-                                self.sig_data_received.emit(packet)
+                        if chunk:
+                            self.sig_data_received.emit(chunk)
                 except Exception as e:
                     self.sig_error.emit(f"接收失败: {e}")
 
-            # 防止 CPU 占用过高
             self.msleep(10)
 
     @staticmethod
     def list_ports():
-        """
-        列出可用串口
-
-        Returns:
-            串口列表 [(port_name, description), ...]
-        """
+        """列出可用串口"""
         ports = serial.tools.list_ports.comports()
         return [(p.device, p.description) for p in ports]
 

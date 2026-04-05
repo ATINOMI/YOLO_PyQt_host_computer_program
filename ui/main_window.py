@@ -7,12 +7,13 @@ import numpy as np
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QLabel, QPushButton, QTextEdit,
     QHBoxLayout, QVBoxLayout, QFormLayout, QGroupBox,
-    QLineEdit, QComboBox, QSpinBox, QFileDialog
+    QComboBox, QSpinBox, QFileDialog
 )
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtCore import Qt
 
 from controller.pipeline import DataPipeline
+from hardware.serial_port import SerialPort
 
 
 class MainWindow(QMainWindow):
@@ -29,17 +30,20 @@ class MainWindow(QMainWindow):
         self.btn_stop = QPushButton("停止")
         self.btn_load_model = QPushButton("加载模型")
 
-        # 参数配置
-        self.input_serial_port = QLineEdit("COM3")
+        # 串口号：下拉列表 + 刷新按钮
+        self.input_serial_port = QComboBox()
+        self.btn_refresh_ports = QPushButton("刷新")
+        self.btn_refresh_ports.setFixedWidth(48)
+
+        # 波特率：默认改为 9600
         self.input_baudrate = QComboBox()
         self.input_baudrate.addItems(['9600', '19200', '38400', '57600', '115200', '256000'])
-        self.input_baudrate.setCurrentText('115200')
+        self.input_baudrate.setCurrentText('9600')
 
         self.input_detect_fps = QSpinBox()
         self.input_detect_fps.setRange(1, 60)
         self.input_detect_fps.setValue(10)
 
-        # 串口完整配置（新增）
         self.input_bytesize = QComboBox()
         self.input_bytesize.addItems(['8', '7', '6', '5'])
         self.input_bytesize.setCurrentText('8')
@@ -52,20 +56,37 @@ class MainWindow(QMainWindow):
         self.input_stopbits.addItems(['1', '1.5', '2'])
         self.input_stopbits.setCurrentText('1')
 
-        # 量化模式选择（新增）
         self.input_quantizer_mode = QComboBox()
-        self.input_quantizer_mode.addItems(['命令模式 (open/close→0xF0/0x30)', 'bbox模式 (详细坐标)','贝柱模式'])
-        self.input_quantizer_mode.setCurrentIndex(0)  # 默认命令模式
+        self.input_quantizer_mode.addItems(['命令模式 (open/close→0xF0/0x30)', 'bbox模式 (详细坐标)', '贝柱模式'])
+        self.input_quantizer_mode.setCurrentIndex(2)
 
         # 状态显示
         self.label_camera_fps = QLabel("Camera FPS: 0")
         self.label_detect_fps = QLabel("Detect FPS: 0")
-        self.text_mcu_response = QTextEdit()  # MCU 回显区（新增）
+        self.text_mcu_response = QTextEdit()
         self.text_mcu_response.setReadOnly(True)
         self.text_mcu_response.setMaximumHeight(150)
 
+        self._refresh_ports()   # 启动时自动扫描一次
         self._init_ui()
         self._connect_signals()
+
+    def _refresh_ports(self):
+        """扫描当前可用串口并填充下拉列表"""
+        current = self.input_serial_port.currentText()
+        ports = SerialPort.list_ports()         # [(device, description), ...]
+        self.input_serial_port.clear()
+        for device, desc in ports:
+            self.input_serial_port.addItem(f"{device} - {desc}", userData=device)
+        # 如果之前选的串口还在，保持选中
+        if current:
+            idx = self.input_serial_port.findText(current, Qt.MatchStartsWith)
+            if idx >= 0:
+                self.input_serial_port.setCurrentIndex(idx)
+
+    def _current_port(self) -> str:
+        """取当前选中的串口设备名（如 'COM3'）"""
+        return self.input_serial_port.currentData() or self.input_serial_port.currentText()
 
     def _init_ui(self):
         """初始化 UI 布局"""
@@ -100,7 +121,16 @@ class MainWindow(QMainWindow):
         # 参数配置
         param_group = QGroupBox("参数配置")
         param_layout = QFormLayout()
-        param_layout.addRow("串口号:", self.input_serial_port)
+
+        # 串口号行：下拉 + 刷新按钮并排
+        port_row = QHBoxLayout()
+        port_row.addWidget(self.input_serial_port)
+        port_row.addWidget(self.btn_refresh_ports)
+        port_row.setContentsMargins(0, 0, 0, 0)
+        port_widget = QWidget()
+        port_widget.setLayout(port_row)
+        param_layout.addRow("串口号:", port_widget)
+
         param_layout.addRow("波特率:", self.input_baudrate)
         param_layout.addRow("数据位:", self.input_bytesize)
         param_layout.addRow("校验位:", self.input_parity)
@@ -118,7 +148,7 @@ class MainWindow(QMainWindow):
         status_group.setLayout(status_layout)
         control_layout.addWidget(status_group)
 
-        # MCU 回显区（新增）
+        # MCU 回显区
         mcu_group = QGroupBox("MCU 回显数据")
         mcu_layout = QVBoxLayout()
         mcu_layout.addWidget(self.text_mcu_response)
@@ -128,7 +158,6 @@ class MainWindow(QMainWindow):
         control_layout.addStretch()
         control_group.setLayout(control_layout)
 
-        # 组装主布局
         main_layout.addWidget(video_group, stretch=70)
         main_layout.addWidget(control_group, stretch=30)
 
@@ -137,17 +166,14 @@ class MainWindow(QMainWindow):
         self.btn_start.clicked.connect(self._on_start)
         self.btn_stop.clicked.connect(self._on_stop)
         self.btn_load_model.clicked.connect(self._on_load_model)
+        self.btn_refresh_ports.clicked.connect(self._refresh_ports)
 
     def _on_start(self):
         """启动按钮点击事件"""
-        # 映射校验位
         parity_map = {'None': 'N', 'Even': 'E', 'Odd': 'O'}
         parity = parity_map.get(self.input_parity.currentText(), 'N')
-
-        # 映射停止位
         stopbits = float(self.input_stopbits.currentText())
 
-        # 映射量化模式
         index = self.input_quantizer_mode.currentIndex()
         if index == 0:
             quantizer_mode = 'command'
@@ -155,12 +181,13 @@ class MainWindow(QMainWindow):
             quantizer_mode = 'bbox'
         else:
             quantizer_mode = 'scallop'
+
         config = {
             'camera_index': 0,
             'camera_fps': 30,
             'detect_fps': self.input_detect_fps.value(),
             'model_path': self._model_path,
-            'serial_port': self.input_serial_port.text(),
+            'serial_port': self._current_port(),
             'baudrate': int(self.input_baudrate.currentText()),
             'bytesize': int(self.input_bytesize.currentText()),
             'parity': parity,
@@ -171,8 +198,6 @@ class MainWindow(QMainWindow):
 
         try:
             self.pipeline = DataPipeline(config)
-
-            # 连接信号
             self.pipeline.sig_processed_frame.connect(self._update_video)
             self.pipeline.sig_mcu_response.connect(self._update_mcu_response)
             self.pipeline.sig_camera_fps.connect(
@@ -206,17 +231,14 @@ class MainWindow(QMainWindow):
     def _on_load_model(self):
         """加载模型按钮点击事件"""
         path, _ = QFileDialog.getOpenFileName(
-            self, "选择模型文件", "", "YOLO Models (*.pt);;All Files (*)"
+            self, "选择模型文件",  r"E:\deeplearning/qt - 副本/yolo", "YOLO Models (*.pt);;All Files (*)"
         )
         if path:
             self._model_path = path
             self._on_error(f"模型已设置: {path}")
 
     def _update_video(self, frame: np.ndarray):
-        """
-        更新视频显示
-        复用 hello_qt.py 第 596-603 行的逻辑
-        """
+        """更新视频显示"""
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb.shape
         bytes_per_line = ch * w
@@ -235,14 +257,13 @@ class MainWindow(QMainWindow):
         timestamp = time.strftime("%H:%M:%S")
         self.text_mcu_response.append(f"[{timestamp}] << {hex_str}")
 
-        # 限制最大行数
         doc = self.text_mcu_response.document()
         if doc.lineCount() > 100:
             cursor = self.text_mcu_response.textCursor()
             cursor.movePosition(cursor.Start)
             cursor.select(cursor.LineUnderCursor)
             cursor.removeSelectedText()
-            cursor.deleteChar()  # 删除换行符
+            cursor.deleteChar()
 
     def _on_error(self, msg: str):
         """错误信息显示"""

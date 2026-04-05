@@ -151,12 +151,12 @@ class ScallopQuantizer:
         cx=(x1+x2)//2
         
         if cx < self.img_w*3/8:
-            command = 0x01 #left
+            command = 0x11 #left
 
         elif cx > self.img_w*5/8:
-            command=0x02 #right
+            command=0x12 #right
 
         else:
-            command=0x03 #stop
+            command=0x13 #stop
 
         return QuantizedData(count=1,objects=[{'command':command}])
